@@ -336,36 +336,53 @@ export default Plugin.define({
     context.renderer.addPostProcessFn(fadeToLogo);
     sync();
 
-    context.keymap.layer(() => ({
-      mode: "global",
-      priority: 10,
-      commands: [
-        {
-          id: splashCommand,
-          title: "Show logo splash",
-          description: "Fade to white and reveal a centered OpenCode logo screen",
-          group: "Rainbow",
-          bind: logoSplashBind,
-          palette: true,
-          run: () => {
-            startSplash();
-          },
+    const registerKeymap = () => {
+      try {
+        context.keymap.layer(() => ({
+          mode: "global",
+          priority: 10,
+          commands: [
+            {
+              id: splashCommand,
+              title: "Show logo splash",
+              description: "Fade to white and reveal a centered OpenCode logo screen",
+              group: "Rainbow",
+              bind: logoSplashBind,
+              palette: true,
+              run: () => {
+                startSplash();
+              },
+            },
+            {
+              id: `${id}.settings`,
+              title: "Rainbow settings",
+              group: "Rainbow",
+              palette: true,
+              slash: {
+                name: "rainbow-settings",
+              },
+              run: () => {
+                show();
+              },
+            },
+          ],
+          bindings: [splashCommand],
+        }));
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    if (!registerKeymap()) {
+      context.ui.slot({
+        append: "app",
+        render: () => {
+          registerKeymap();
+          return null as any;
         },
-        {
-          id: `${id}.settings`,
-          title: "Rainbow settings",
-          group: "Rainbow",
-          palette: true,
-          slash: {
-            name: "rainbow-settings",
-          },
-          run: () => {
-            show();
-          },
-        },
-      ],
-      bindings: [splashCommand],
-    }));
+      });
+    }
 
     return () => {
       disposed = true;
