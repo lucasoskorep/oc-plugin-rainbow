@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { TargetChannel, type OptimizedBuffer } from "@opentui/core";
-import { Plugin } from "@opencode/plugin/tui";
+import type { Plugin } from "@opencode/plugin/tui";
 import { createSignal } from "solid-js";
 import { LogoScreen } from "./logo-screen";
 import {
@@ -122,7 +122,7 @@ const cfg = (opts: Record<string, unknown> | undefined): Cfg => {
   };
 };
 
-export default Plugin.define({
+const plugin: Plugin.Definition = {
   id,
   setup(context) {
     if (context.options?.enabled === false) return;
@@ -221,10 +221,8 @@ export default Plugin.define({
     const startSplash = () => {
       if (splash.phase !== "idle") return;
       if (isCurrentRouteOurSplash()) return;
-      if (dialogOpen) {
-        context.ui.dialog.clear();
-        dialogOpen = false;
-      }
+      context.ui.dialog.clear();
+      dialogOpen = false;
       splash.phase = "fade-in";
       splash.elapsed = 0;
       splash.queued = false;
@@ -315,7 +313,6 @@ export default Plugin.define({
     };
 
     const show = () => {
-      dialogOpen = true;
       context.ui.dialog.show(
         () => (
           <SettingsDialog
@@ -333,6 +330,7 @@ export default Plugin.define({
           dialogOpen = false;
         },
       );
+      dialogOpen = true;
       context.ui.dialog.set({ size: "medium" });
     };
 
@@ -381,6 +379,9 @@ export default Plugin.define({
     return () => {
       disposed = true;
       clearRainbowTimer();
+      if (isCurrentRouteOurSplash()) {
+        context.ui.router.navigate({ type: "home" });
+      }
       unregisterRoute();
       unregisterSlot();
       context.renderer.removePostProcessFn(apply);
@@ -389,13 +390,12 @@ export default Plugin.define({
         context.renderer.dropLive();
         live = false;
       }
-      if (isCurrentRouteOurSplash()) {
-        context.ui.router.navigate({ type: "home" });
-      }
       if (dialogOpen) {
         context.ui.dialog.clear();
         dialogOpen = false;
       }
     };
   },
-});
+};
+
+export default plugin;

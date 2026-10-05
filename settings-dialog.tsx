@@ -1,8 +1,7 @@
 /** @jsxImportSource @opentui/solid */
-import { RGBA } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
 import { For, createMemo, createSignal } from "solid-js";
-import type { RainbowColor, RainbowTheme } from "./rainbow-post-process";
+import { toRgba, type RainbowTheme } from "./rainbow-post-process";
 
 export type SettingsState = {
   fg: boolean;
@@ -94,11 +93,6 @@ export const settingByField = Object.fromEntries(rows.map((item) => [item.key, i
   [K in NumberField]: NumberRow;
 };
 
-const toRgba = (color: RainbowColor): RGBA => {
-  if (color instanceof RGBA) return color;
-  return RGBA.fromValues(color.r, color.g, color.b, color.a);
-};
-
 const status = (value: boolean) => {
   return value ? "ON" : "OFF";
 };
@@ -184,7 +178,7 @@ export const SettingsDialog = (props: {
                 justifyContent="space-between"
                 paddingLeft={1}
                 paddingRight={1}
-                backgroundColor={isSelected() ? toRgba(theme().backgroundPanel) : undefined}
+                backgroundColor={isSelected() ? toRgba(theme().backgroundElement) : undefined}
               >
                 <box flexDirection="row" gap={1}>
                   <text fg={toRgba(isSelected() ? theme().primary : theme().textMuted)}>

@@ -1,3 +1,6 @@
+import { RGBA } from "@opentui/core";
+import type { ResolvedTheme } from "@opencode/theme/tui";
+
 const eps = 1 / 510;
 const top = "▀".charCodeAt(0);
 const tilt = (25 * Math.PI) / 180;
@@ -12,7 +15,6 @@ export type RainbowColor = {
   g: number;
   b: number;
   a: number;
-  toInts?: () => [number, number, number, number] | readonly [number, number, number, number];
 };
 
 export type RainbowTheme = {
@@ -599,7 +601,7 @@ const applyBgOnly = (
           ((Math.abs(r - bg0r) <= eps && Math.abs(g - bg0g) <= eps && Math.abs(b - bg0b) <= eps) ||
             (Math.abs(r - bg1r) <= eps && Math.abs(g - bg1g) <= eps && Math.abs(b - bg1b) <= eps) ||
             (Math.abs(r - bg2r) <= eps && Math.abs(g - bg2g) <= eps && Math.abs(b - bg2b) <= eps) ||
-            (Math.abs(r - bg3r) <= eps && Math.abs(g - bg3g) <= eps && Math.abs(b - bg3b) <= eps))
+            (Math.abs(r - bg3r) <= eps && Math.abs(g - bg3g) <= eps && Math.abs(bb - bg3b) <= eps))
         ) {
           paintBlend(fg, slot, palette, paletteCount, bgPhase, amt);
         }
@@ -674,33 +676,51 @@ const applyBgOnlyU16 = (
   }
 };
 
-export const toRainbowTheme = (theme: any, mode: "dark" | "light" = "dark"): RainbowTheme => {
-  if (theme?.primary && theme?.background && theme?.text) {
+export const toRgba = (color: RainbowColor): RGBA => {
+  if (color instanceof RGBA) return color;
+  return RGBA.fromValues(color.r, color.g, color.b, color.a);
+};
+
+export const toRainbowTheme = (
+  theme: ResolvedTheme | RainbowTheme | any,
+  _mode: "dark" | "light" = "dark",
+): RainbowTheme => {
+  if (theme && "primary" in theme && "background" in theme && "text" in theme) {
     return theme as RainbowTheme;
   }
-  const step = mode === "dark" ? 200 : 700;
-  const primary = theme?.hue?.interactive?.[step] ??
+  // In OpenCode 2.0, hue scales are already resolved for the active mode and step 200 represents
+  // the prominent foreground accent/interactive color in both light and dark modes.
+  const step = 200;
+  const primary =
+    theme?.hue?.interactive?.[step] ??
     theme?.text?.action?.primary?.base ??
-    theme?.text?.base ?? { r: 0.36, g: 0.55, b: 1, a: 1 };
+    theme?.text?.base ??
+    RGBA.fromValues(0.36, 0.55, 1, 1);
   const accent = theme?.hue?.accent?.[step] ?? theme?.syntax?.keyword ?? primary;
   const secondary = theme?.categorical?.[0]?.[step] ?? theme?.syntax?.function ?? primary;
 
   return {
-    text: theme?.text?.base ?? theme?.text ?? { r: 1, g: 1, b: 1, a: 1 },
-    textMuted: theme?.text?.muted ?? theme?.textMuted ?? { r: 0.6, g: 0.6, b: 0.6, a: 1 },
+    text: theme?.text?.base ?? theme?.text ?? RGBA.fromValues(1, 1, 1, 1),
+    textMuted: theme?.text?.muted ?? theme?.textMuted ?? RGBA.fromValues(0.6, 0.6, 0.6, 1),
     primary,
     accent,
     secondary,
-    background: theme?.background?.base ?? theme?.background ?? { r: 0.1, g: 0.1, b: 0.1, a: 1 },
-    backgroundPanel: theme?.background?.raised?.base ??
+    background: theme?.background?.base ?? theme?.background ?? RGBA.fromValues(0.1, 0.1, 0.1, 1),
+    backgroundPanel:
+      theme?.background?.raised?.base ??
       theme?.backgroundPanel ??
-      theme?.background?.base ?? { r: 0.15, g: 0.15, b: 0.15, a: 1 },
-    backgroundElement: theme?.background?.raised?.high ??
+      theme?.background?.base ??
+      RGBA.fromValues(0.15, 0.15, 0.15, 1),
+    backgroundElement:
+      theme?.background?.raised?.high ??
       theme?.backgroundElement ??
-      theme?.background?.raised?.base ?? { r: 0.2, g: 0.2, b: 0.2, a: 1 },
-    backgroundMenu: theme?.background?.raised?.max ??
+      theme?.background?.raised?.base ??
+      RGBA.fromValues(0.2, 0.2, 0.2, 1),
+    backgroundMenu:
+      theme?.background?.raised?.max ??
       theme?.backgroundMenu ??
-      theme?.background?.raised?.high ?? { r: 0.25, g: 0.25, b: 0.25, a: 1 },
+      theme?.background?.raised?.high ??
+      RGBA.fromValues(0.25, 0.25, 0.25, 1),
   };
 };
 

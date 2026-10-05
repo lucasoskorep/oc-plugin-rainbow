@@ -4,7 +4,7 @@ import plugin from "../tui";
 import { createRainbowPostProcess, toRainbowTheme } from "../rainbow-post-process";
 
 describe("oc-plugin-rainbow", () => {
-  it("resolves rainbow theme from V2 theme tokens", () => {
+  it("resolves rainbow theme from V2 theme tokens in dark and light modes", () => {
     const v2Theme = {
       text: {
         base: RGBA.fromHex("#ebeef5"),
@@ -28,13 +28,16 @@ describe("oc-plugin-rainbow", () => {
     const darkTheme = toRainbowTheme(v2Theme, "dark");
     expect(darkTheme.text.r).toBeCloseTo(RGBA.fromHex("#ebeef5").r);
     expect(darkTheme.background.r).toBeCloseTo(RGBA.fromHex("#12151c").r);
+    expect(darkTheme.backgroundElement.r).toBeCloseTo(RGBA.fromHex("#1e222e").r);
+    // In OpenCode 2.0, step 200 is the prominent foreground accent color
     expect(darkTheme.primary.r).toBeCloseTo(RGBA.fromHex("#5b8cff").r);
     expect(darkTheme.accent.r).toBeCloseTo(RGBA.fromHex("#ff79c6").r);
     expect(darkTheme.secondary.r).toBeCloseTo(RGBA.fromHex("#50fa7b").r);
 
+    // In light mode, step 200 is also the vivid foreground color (not near-white step 700)
     const lightTheme = toRainbowTheme(v2Theme, "light");
-    expect(lightTheme.primary.r).toBeCloseTo(RGBA.fromHex("#142c6c").r);
-    expect(lightTheme.accent.r).toBeCloseTo(RGBA.fromHex("#611645").r);
+    expect(lightTheme.primary.r).toBeCloseTo(RGBA.fromHex("#5b8cff").r);
+    expect(lightTheme.accent.r).toBeCloseTo(RGBA.fromHex("#ff79c6").r);
   });
 
   it("handles legacy theme objects in toRainbowTheme", () => {
@@ -82,7 +85,7 @@ describe("oc-plugin-rainbow", () => {
     const buf = OptimizedBuffer.create(80, 24, "unicode");
     buf.setCell(0, 0, "A", RGBA.fromHex("#ebeef5"), RGBA.fromHex("#12151c"));
 
-    // Cell with high-byte intent metadata (e.g. indexed color intent 0x0700 | 235 = 2027)
+    // Cell with high-byte intent/palette slot metadata (0x0700 | 235 = 2027)
     buf.buffers.fg[4] = 235 | (7 << 8);
     buf.buffers.fg[5] = 238;
     buf.buffers.fg[6] = 245;
@@ -99,9 +102,10 @@ describe("oc-plugin-rainbow", () => {
     expect(postFg0[0]).not.toBe(235);
     expect(postFg0[3]).toBe(255);
 
-    // Cell with high-byte intent metadata should also match and be recolored
+    // Cell with high-byte intent metadata should mask and be recolored to clean RGB
     const postFg1 = Array.from(buf.buffers.fg.slice(4, 8));
     expect(postFg1[0]).not.toBe(235 | (7 << 8));
+    expect(postFg1[0]).toBeLessThanOrEqual(255);
     expect(postFg1[3]).toBe(255);
   });
 
@@ -148,6 +152,7 @@ describe("oc-plugin-rainbow", () => {
     let registeredRoutes: any[] = [];
     let postProcessFns: any[] = [];
     let slotDisposed = false;
+    let currentRoute: any = { type: "home" };
 
     const mockContext = {
       options: { enabled: true },
@@ -196,8 +201,10 @@ describe("oc-plugin-rainbow", () => {
               registeredRoutes = registeredRoutes.filter((p) => p !== page);
             };
           },
-          navigate: () => {},
-          current: () => ({ type: "home" }),
+          navigate: (dest: any) => {
+            currentRoute = dest;
+          },
+          current: () => currentRoute,
         },
       },
       keymap: {

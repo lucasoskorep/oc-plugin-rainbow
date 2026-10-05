@@ -6,6 +6,7 @@
       "name": "oc-plugin-rainbow",
       "devDependencies": {
         "@opencode/plugin": "^2.0.23",
+        "@opencode/theme": "^2.0.23",
         "@opentui/core": "^0.5.14",
         "@opentui/solid": "^0.5.14",
         "@types/bun": "latest",
@@ -15,8 +16,8 @@
       },
       "peerDependencies": {
         "@opencode/plugin": ">=2.0.0",
-        "@opentui/core": ">=0.5.8",
-        "@opentui/solid": ">=0.5.8",
+        "@opentui/core": "^0.5.14",
+        "@opentui/solid": "^0.5.14",
         "solid-js": ">=1.9.0",
       },
     },
@@ -203,6 +204,8 @@
     "@opencode/protocol": ["@opencode/protocol@2.0.23", "", { "dependencies": { "@opencode/schema": "2.0.23", "effect": "4.0.0-rc.112" } }, "sha512-acwAvjQgzzBsZ0h2Phvo+P/SurCexqcidPL2AYB6cDDPgOhY7ppeoKJAOQ76zAUcT4WBlcQzLl6Lq3L+IR6OEw=="],
 
     "@opencode/schema": ["@opencode/schema@2.0.23", "", { "dependencies": { "@standard-schema/spec": "1.1.0", "effect": "4.0.0-rc.112" } }, "sha512-DglA+CCNmCaiAJ8FqAKo2EKIkCOF9/EmMEYowcXhTrQcoJ7eaTx7ytGjPgis6VHQuU4aaAgwZYw96ypS3ojsIw=="],
+
+    "@opencode/theme": ["@opencode/theme@2.0.23", "", { "dependencies": { "@opentui/core": "0.5.14", "effect": "4.0.0-rc.112" } }, "sha512-drjUrafdjJlsfpRgCihSgOam4pVMFV6dWEApUkneeT+sNHUl4RxuQ5rol0scTVD5B0zl2G1BAwsBOdMBTy7RFg=="],
 
     "@opencode/util": ["@opencode/util@2.0.23", "", { "dependencies": { "@effect/opentelemetry": "4.0.0-rc.112", "@effect/platform-node": "4.0.0-rc.112", "@effect/platform-node-shared": "4.0.0-rc.112", "@npmcli/arborist": "9.4.0", "@npmcli/config": "10.8.1", "@opentelemetry/api": "1.9.0", "@opentelemetry/api-logs": "0.219.0", "@opentelemetry/context-async-hooks": "2.8.0", "@opentelemetry/exporter-trace-otlp-http": "0.219.0", "@opentelemetry/resources": "2.8.0", "@opentelemetry/sdk-logs": "0.219.0", "@opentelemetry/sdk-metrics": "2.8.0", "@opentelemetry/sdk-trace-base": "2.8.0", "@opentelemetry/sdk-trace-node": "2.8.0", "cross-spawn": "7.0.6", "effect": "4.0.0-rc.112", "glob": "13.0.5", "mime-types": "3.0.2", "minimatch": "10.2.5", "npm-package-arg": "13.0.2", "open": "11.0.4", "pacote": "21.5.1" } }, "sha512-8SKRLXQkyNO0s+h3NqqufAiDPEqeJOd+lwECrgOZPF84XMlFo7YEiECB7WbSvQvIn27nH/BqChQSUG8cqMS/Cw=="],
 

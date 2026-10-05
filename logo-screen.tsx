@@ -2,7 +2,7 @@
 import { RGBA, TextAttributes } from "@opentui/core";
 import { For, createMemo, type JSX } from "solid-js";
 import { useKeyboard } from "@opentui/solid";
-import type { RainbowColor, RainbowTheme } from "./rainbow-post-process";
+import { toRgba, type RainbowTheme } from "./rainbow-post-process";
 
 const logo = {
   left: [
@@ -20,11 +20,6 @@ const logo = {
 };
 const marks = "_^~";
 const shadowMarker = new RegExp(`[${marks}]`);
-
-const toRgba = (color: RainbowColor): RGBA => {
-  if (color instanceof RGBA) return color;
-  return RGBA.fromValues(color.r, color.g, color.b, color.a);
-};
 
 const tint = (a: RGBA, b: RGBA, amt: number) => {
   return RGBA.fromValues(
