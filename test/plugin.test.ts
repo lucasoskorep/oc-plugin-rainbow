@@ -105,6 +105,10 @@ describe("oc-plugin-rainbow", () => {
       },
       themeMode: "dark",
       ui: {
+        slot: (claim: any) => {
+          claim.render();
+          return () => {};
+        },
         dialog: {
           set: () => {},
           show: () => {},

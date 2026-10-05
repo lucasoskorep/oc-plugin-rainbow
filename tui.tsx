@@ -336,8 +336,10 @@ export default Plugin.define({
     context.renderer.addPostProcessFn(fadeToLogo);
     sync();
 
-    const registerKeymap = () => {
-      try {
+    // Register keymap and commands via the app slot, where Keymap.Provider is mounted
+    context.ui.slot({
+      append: "app",
+      render: () => {
         context.keymap.layer(() => ({
           mode: "global",
           priority: 10,
@@ -368,21 +370,9 @@ export default Plugin.define({
           ],
           bindings: [splashCommand],
         }));
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    if (!registerKeymap()) {
-      context.ui.slot({
-        append: "app",
-        render: () => {
-          registerKeymap();
-          return null as any;
-        },
-      });
-    }
+        return null as any;
+      },
+    });
 
     return () => {
       disposed = true;
