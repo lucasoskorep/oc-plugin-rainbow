@@ -3,7 +3,11 @@ import { TargetChannel, type OptimizedBuffer } from "@opentui/core";
 import { Plugin } from "@opencode/plugin/tui";
 import { createSignal } from "solid-js";
 import { LogoScreen } from "./logo-screen";
-import { createRainbowPostProcess, type RainbowTheme } from "./rainbow-post-process";
+import {
+  createRainbowPostProcess,
+  toRainbowTheme,
+  type RainbowTheme,
+} from "./rainbow-post-process";
 import {
   SettingsDialog,
   type Field,
@@ -42,7 +46,7 @@ const clamp = (value: number, min: number, max: number) => {
 };
 
 const num = (value: unknown, fallback: number) => {
-  if (typeof value !== "number") return fallback;
+  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
   return value;
 };
 
@@ -118,34 +122,6 @@ const cfg = (opts: Record<string, unknown> | undefined): Cfg => {
   };
 };
 
-export const toRainbowTheme = (theme: any, mode: "dark" | "light" = "dark"): RainbowTheme => {
-  if (theme?.primary && theme?.background && theme?.text) {
-    return theme as RainbowTheme;
-  }
-  const step = mode === "dark" ? 200 : 700;
-  const primary =
-    theme?.hue?.interactive?.[step] ?? theme?.text?.action?.primary?.base ?? theme?.text?.base;
-  const accent = theme?.hue?.accent?.[step] ?? theme?.syntax?.keyword ?? primary;
-  const secondary = theme?.categorical?.[0]?.[step] ?? theme?.syntax?.function ?? primary;
-
-  return {
-    text: theme?.text?.base ?? theme?.text,
-    textMuted: theme?.text?.muted ?? theme?.textMuted,
-    primary,
-    accent,
-    secondary,
-    background: theme?.background?.base ?? theme?.background,
-    backgroundPanel:
-      theme?.background?.raised?.base ?? theme?.backgroundPanel ?? theme?.background?.base,
-    backgroundElement:
-      theme?.background?.raised?.high ??
-      theme?.backgroundElement ??
-      theme?.background?.raised?.base,
-    backgroundMenu:
-      theme?.background?.raised?.max ?? theme?.backgroundMenu ?? theme?.background?.raised?.high,
-  };
-};
-
 export default Plugin.define({
   id,
   setup(context) {
@@ -174,7 +150,18 @@ export default Plugin.define({
     const logoSplashBind =
       typeof keybindConfig?.logo_splash === "string" ? keybindConfig.logo_splash : splashKeybind;
 
-    const themeAccessor = () => toRainbowTheme(context.theme, context.themeMode);
+    let lastTheme: any;
+    let lastMode: any;
+    let cachedRainbowTheme: RainbowTheme;
+    const themeAccessor = () => {
+      if (context.theme !== lastTheme || context.themeMode !== lastMode) {
+        lastTheme = context.theme;
+        lastMode = context.themeMode;
+        cachedRainbowTheme = toRainbowTheme(context.theme, context.themeMode);
+      }
+      return cachedRainbowTheme;
+    };
+
     const apply: (buffer: OptimizedBuffer, delta: number) => void = createRainbowPostProcess(
       themeAccessor,
       value,
@@ -186,6 +173,7 @@ export default Plugin.define({
     };
     let live = false;
     let disposed = false;
+    let dialogOpen = false;
     let rainbowTimer: ReturnType<typeof setTimeout> | undefined;
 
     const splashLive = () => splash.phase !== "idle";
@@ -225,11 +213,18 @@ export default Plugin.define({
       }
     };
 
+    const isCurrentRouteOurSplash = () => {
+      const current = context.ui.router.current();
+      return current.type === "plugin" && current.id === id && current.name === splashRoute;
+    };
+
     const startSplash = () => {
       if (splash.phase !== "idle") return;
-      const current = context.ui.router.current();
-      if (current.type === "plugin" && current.name === splashRoute) return;
-      context.ui.dialog.clear();
+      if (isCurrentRouteOurSplash()) return;
+      if (dialogOpen) {
+        context.ui.dialog.clear();
+        dialogOpen = false;
+      }
       splash.phase = "fade-in";
       splash.elapsed = 0;
       splash.queued = false;
@@ -260,7 +255,7 @@ export default Plugin.define({
           splash.queued = true;
           queueMicrotask(() => {
             if (disposed) return;
-            context.ui.router.navigate({ type: "plugin", name: splashRoute });
+            context.ui.router.navigate({ type: "plugin", id, name: splashRoute });
             splash.queued = false;
             sync();
             context.renderer.requestRender();
@@ -303,7 +298,7 @@ export default Plugin.define({
       setValue(state);
       updateStored?.((draft) => {
         draft[key] = next;
-      });
+      })?.catch(() => {});
       sync(state);
     };
 
@@ -320,16 +315,25 @@ export default Plugin.define({
     };
 
     const show = () => {
+      dialogOpen = true;
+      context.ui.dialog.show(
+        () => (
+          <SettingsDialog
+            theme={themeAccessor}
+            value={value}
+            flip={flip}
+            tune={tune}
+            onClose={() => {
+              dialogOpen = false;
+              context.ui.dialog.clear();
+            }}
+          />
+        ),
+        () => {
+          dialogOpen = false;
+        },
+      );
       context.ui.dialog.set({ size: "medium" });
-      context.ui.dialog.show(() => (
-        <SettingsDialog
-          theme={themeAccessor}
-          value={value}
-          flip={flip}
-          tune={tune}
-          onClose={() => context.ui.dialog.clear()}
-        />
-      ));
     };
 
     context.renderer.addPostProcessFn(apply);
@@ -337,7 +341,7 @@ export default Plugin.define({
     sync();
 
     // Register keymap and commands via the app slot, where Keymap.Provider is mounted
-    context.ui.slot({
+    const unregisterSlot = context.ui.slot({
       append: "app",
       render: () => {
         context.keymap.layer(() => ({
@@ -378,13 +382,20 @@ export default Plugin.define({
       disposed = true;
       clearRainbowTimer();
       unregisterRoute();
+      unregisterSlot();
       context.renderer.removePostProcessFn(apply);
       context.renderer.removePostProcessFn(fadeToLogo);
       if (live) {
         context.renderer.dropLive();
         live = false;
       }
-      context.ui.dialog.clear();
+      if (isCurrentRouteOurSplash()) {
+        context.ui.router.navigate({ type: "home" });
+      }
+      if (dialogOpen) {
+        context.ui.dialog.clear();
+        dialogOpen = false;
+      }
     };
   },
 });

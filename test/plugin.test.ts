@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { OptimizedBuffer, RGBA } from "@opentui/core";
-import plugin, { toRainbowTheme } from "../tui";
-import { createRainbowPostProcess } from "../rainbow-post-process";
+import plugin from "../tui";
+import { createRainbowPostProcess, toRainbowTheme } from "../rainbow-post-process";
 
 describe("oc-plugin-rainbow", () => {
   it("resolves rainbow theme from V2 theme tokens", () => {
@@ -37,7 +37,25 @@ describe("oc-plugin-rainbow", () => {
     expect(lightTheme.accent.r).toBeCloseTo(RGBA.fromHex("#611645").r);
   });
 
-  it("applies rainbow post-processing to OptimizedBuffer with Uint16Array", () => {
+  it("handles legacy theme objects in toRainbowTheme", () => {
+    const legacyTheme = {
+      text: RGBA.fromHex("#ffffff"),
+      textMuted: RGBA.fromHex("#888888"),
+      primary: RGBA.fromHex("#ff0000"),
+      accent: RGBA.fromHex("#00ff00"),
+      secondary: RGBA.fromHex("#0000ff"),
+      background: RGBA.fromHex("#000000"),
+      backgroundPanel: RGBA.fromHex("#111111"),
+      backgroundElement: RGBA.fromHex("#222222"),
+      backgroundMenu: RGBA.fromHex("#333333"),
+    };
+
+    const resolved = toRainbowTheme(legacyTheme);
+    expect(resolved.primary.r).toBe(1);
+    expect(resolved.background.r).toBe(0);
+  });
+
+  it("applies rainbow post-processing to OptimizedBuffer with Uint16Array including intent metadata", () => {
     const theme = {
       text: RGBA.fromHex("#ebeef5"),
       textMuted: RGBA.fromHex("#8e95a9"),
@@ -63,18 +81,73 @@ describe("oc-plugin-rainbow", () => {
 
     const buf = OptimizedBuffer.create(80, 24, "unicode");
     buf.setCell(0, 0, "A", RGBA.fromHex("#ebeef5"), RGBA.fromHex("#12151c"));
-    const initialFg = Array.from(buf.buffers.fg.slice(0, 4));
-    expect(initialFg).toEqual([235, 238, 245, 255]);
+
+    // Cell with high-byte intent metadata (e.g. indexed color intent 0x0700 | 235 = 2027)
+    buf.buffers.fg[4] = 235 | (7 << 8);
+    buf.buffers.fg[5] = 238;
+    buf.buffers.fg[6] = 245;
+    buf.buffers.fg[7] = 255;
+    buf.buffers.bg[4] = 18;
+    buf.buffers.bg[5] = 21;
+    buf.buffers.bg[6] = 28;
+    buf.buffers.bg[7] = 255;
 
     process(buf, 16);
-    const postFg = Array.from(buf.buffers.fg.slice(0, 4));
-    expect(postFg).not.toEqual(initialFg);
+
+    // Standard cell should be recolored
+    const postFg0 = Array.from(buf.buffers.fg.slice(0, 4));
+    expect(postFg0[0]).not.toBe(235);
+    expect(postFg0[3]).toBe(255);
+
+    // Cell with high-byte intent metadata should also match and be recolored
+    const postFg1 = Array.from(buf.buffers.fg.slice(4, 8));
+    expect(postFg1[0]).not.toBe(235 | (7 << 8));
+    expect(postFg1[3]).toBe(255);
+  });
+
+  it("supports Float32Array buffers", () => {
+    const theme = {
+      text: { r: 1, g: 1, b: 1, a: 1 },
+      textMuted: { r: 0.5, g: 0.5, b: 0.5, a: 1 },
+      primary: { r: 0, g: 0, b: 1, a: 1 },
+      accent: { r: 1, g: 0, b: 0, a: 1 },
+      secondary: { r: 0, g: 1, b: 0, a: 1 },
+      background: { r: 0, g: 0, b: 0, a: 1 },
+      backgroundPanel: { r: 0.1, g: 0.1, b: 0.1, a: 1 },
+      backgroundElement: { r: 0.2, g: 0.2, b: 0.2, a: 1 },
+      backgroundMenu: { r: 0.3, g: 0.3, b: 0.3, a: 1 },
+    };
+
+    const process = createRainbowPostProcess(
+      () => theme,
+      () => ({
+        fg: true,
+        bg: true,
+        speed: 0.008,
+        turns: 3,
+        glow: 0.05,
+      }),
+    );
+
+    const floatBuf = {
+      width: 10,
+      height: 10,
+      buffers: {
+        char: new Uint32Array(100),
+        fg: new Float32Array(400).fill(1),
+        bg: new Float32Array(400).fill(0),
+      },
+    };
+
+    process(floatBuf, 16);
+    expect(floatBuf.buffers.fg[0]).not.toBe(1);
   });
 
   it("registers commands, routes, and cleans up on dispose", () => {
     let registeredCommands: any[] = [];
     let registeredRoutes: any[] = [];
     let postProcessFns: any[] = [];
+    let slotDisposed = false;
 
     const mockContext = {
       options: { enabled: true },
@@ -107,7 +180,9 @@ describe("oc-plugin-rainbow", () => {
       ui: {
         slot: (claim: any) => {
           claim.render();
-          return () => {};
+          return () => {
+            slotDisposed = true;
+          };
         },
         dialog: {
           set: () => {},
@@ -138,6 +213,7 @@ describe("oc-plugin-rainbow", () => {
 
     expect(plugin.id).toBe("tui-rainbow");
     const cleanup = plugin.setup(mockContext as any);
+    expect(typeof cleanup).toBe("function");
 
     expect(postProcessFns.length).toBe(2);
     expect(registeredRoutes.map((r) => r.name)).toContain("logo");
@@ -150,5 +226,6 @@ describe("oc-plugin-rainbow", () => {
 
     expect(postProcessFns.length).toBe(0);
     expect(registeredRoutes.length).toBe(0);
+    expect(slotDisposed).toBe(true);
   });
 });

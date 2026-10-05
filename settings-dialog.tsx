@@ -126,14 +126,14 @@ export const SettingsDialog = (props: {
       return;
     }
 
-    if (evt.name === "up" || (evt.ctrl && evt.name === "p")) {
+    if (evt.name === "up" || evt.name === "k") {
       evt.preventDefault();
       evt.stopPropagation();
       setCurIndex((prev) => (prev > 0 ? prev - 1 : rows.length - 1));
       return;
     }
 
-    if (evt.name === "down" || (evt.ctrl && evt.name === "n")) {
+    if (evt.name === "down" || evt.name === "j") {
       evt.preventDefault();
       evt.stopPropagation();
       setCurIndex((prev) => (prev < rows.length - 1 ? prev + 1 : 0));

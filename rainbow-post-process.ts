@@ -12,6 +12,7 @@ export type RainbowColor = {
   g: number;
   b: number;
   a: number;
+  toInts?: () => [number, number, number, number] | readonly [number, number, number, number];
 };
 
 export type RainbowTheme = {
@@ -296,9 +297,10 @@ const paintBlendU16 = (
   const r = baseR + (nextR - baseR) * gap;
   const g = baseG + (nextG - baseG) * gap;
   const b = baseB + (nextB - baseB) * gap;
-  const prevR = buf[slot]!;
-  const prevG = buf[slot + 1]!;
-  const prevB = buf[slot + 2]!;
+  // Mask with 0xff to read the true color channel and ignore intent metadata in the high byte
+  const prevR = buf[slot]! & 255;
+  const prevG = buf[slot + 1]! & 255;
+  const prevB = buf[slot + 2]! & 255;
 
   buf[slot] = Math.round(prevR + (r - prevR) * amt);
   buf[slot + 1] = Math.round(prevG + (g - prevG) * amt);
@@ -429,25 +431,26 @@ const applyBothU16 = (
     let bgPhase = y * bgRow + bgShift;
 
     for (let x = 0; x < width; x++, cell++, slot += 4) {
-      const r = fg[slot]!;
-      const g = fg[slot + 1]!;
-      const b = fg[slot + 2]!;
+      // In OpenTUI 0.5 Uint16Array buffers, low byte holds color and high byte holds intent metadata
+      const r = fg[slot]! & 255;
+      const g = fg[slot + 1]! & 255;
+      const b = fg[slot + 2]! & 255;
 
       if (
-        (Math.abs(r - textR) <= 1 && Math.abs(g - textG) <= 1 && Math.abs(b - textB) <= 1) ||
-        (Math.abs(r - mutedR) <= 1 && Math.abs(g - mutedG) <= 1 && Math.abs(b - mutedB) <= 1)
+        (r === textR && g === textG && b === textB) ||
+        (r === mutedR && g === mutedG && b === mutedB)
       ) {
         paintFullU16(fg, slot, palette, paletteCount, fgPhase);
       }
 
-      const br = bg[slot]!;
-      const bgg = bg[slot + 1]!;
-      const bb = bg[slot + 2]!;
+      const br = bg[slot]! & 255;
+      const bgg = bg[slot + 1]! & 255;
+      const bb = bg[slot + 2]! & 255;
       const matchBg =
-        (Math.abs(br - bg0r) <= 1 && Math.abs(bgg - bg0g) <= 1 && Math.abs(bb - bg0b) <= 1) ||
-        (Math.abs(br - bg1r) <= 1 && Math.abs(bgg - bg1g) <= 1 && Math.abs(bb - bg1b) <= 1) ||
-        (Math.abs(br - bg2r) <= 1 && Math.abs(bgg - bg2g) <= 1 && Math.abs(bb - bg2b) <= 1) ||
-        (Math.abs(br - bg3r) <= 1 && Math.abs(bgg - bg3g) <= 1 && Math.abs(bb - bg3b) <= 1);
+        (br === bg0r && bgg === bg0g && bb === bg0b) ||
+        (br === bg1r && bgg === bg1g && bb === bg1b) ||
+        (br === bg2r && bgg === bg2g && bb === bg2b) ||
+        (br === bg3r && bgg === bg3g && bb === bg3b);
 
       if (matchBg) {
         const rise = Math.sin((bgPhase - Math.floor(bgPhase)) * pi);
@@ -456,10 +459,10 @@ const applyBothU16 = (
 
         if (
           char[cell] === top &&
-          ((Math.abs(r - bg0r) <= 1 && Math.abs(g - bg0g) <= 1 && Math.abs(b - bg0b) <= 1) ||
-            (Math.abs(r - bg1r) <= 1 && Math.abs(g - bg1g) <= 1 && Math.abs(b - bg1b) <= 1) ||
-            (Math.abs(r - bg2r) <= 1 && Math.abs(g - bg2g) <= 1 && Math.abs(b - bg2b) <= 1) ||
-            (Math.abs(r - bg3r) <= 1 && Math.abs(g - bg3g) <= 1 && Math.abs(b - bg3b) <= 1))
+          ((r === bg0r && g === bg0g && b === bg0b) ||
+            (r === bg1r && g === bg1g && b === bg1b) ||
+            (r === bg2r && g === bg2g && b === bg2b) ||
+            (r === bg3r && g === bg3g && b === bg3b))
         ) {
           paintBlendU16(fg, slot, palette, paletteCount, bgPhase, amt);
         }
@@ -529,12 +532,12 @@ const applyFgOnlyU16 = (
     let fgPhase = y * fgRow + fgShift;
 
     for (let x = 0; x < width; x++, slot += 4) {
-      const r = fg[slot]!;
-      const g = fg[slot + 1]!;
-      const b = fg[slot + 2]!;
+      const r = fg[slot]! & 255;
+      const g = fg[slot + 1]! & 255;
+      const b = fg[slot + 2]! & 255;
       if (
-        (Math.abs(r - textR) <= 1 && Math.abs(g - textG) <= 1 && Math.abs(b - textB) <= 1) ||
-        (Math.abs(r - mutedR) <= 1 && Math.abs(g - mutedG) <= 1 && Math.abs(b - mutedB) <= 1)
+        (r === textR && g === textG && b === textB) ||
+        (r === mutedR && g === mutedG && b === mutedB)
       ) {
         paintFullU16(fg, slot, palette, paletteCount, fgPhase);
       }
@@ -638,17 +641,17 @@ const applyBgOnlyU16 = (
     let bgPhase = y * bgRow + bgShift;
 
     for (let x = 0; x < width; x++, cell++, slot += 4) {
-      const r = fg[slot]!;
-      const g = fg[slot + 1]!;
-      const b = fg[slot + 2]!;
-      const br = bg[slot]!;
-      const bgg = bg[slot + 1]!;
-      const bb = bg[slot + 2]!;
+      const r = fg[slot]! & 255;
+      const g = fg[slot + 1]! & 255;
+      const b = fg[slot + 2]! & 255;
+      const br = bg[slot]! & 255;
+      const bgg = bg[slot + 1]! & 255;
+      const bb = bg[slot + 2]! & 255;
       const matchBg =
-        (Math.abs(br - bg0r) <= 1 && Math.abs(bgg - bg0g) <= 1 && Math.abs(bb - bg0b) <= 1) ||
-        (Math.abs(br - bg1r) <= 1 && Math.abs(bgg - bg1g) <= 1 && Math.abs(bb - bg1b) <= 1) ||
-        (Math.abs(br - bg2r) <= 1 && Math.abs(bgg - bg2g) <= 1 && Math.abs(bb - bg2b) <= 1) ||
-        (Math.abs(br - bg3r) <= 1 && Math.abs(bgg - bg3g) <= 1 && Math.abs(bb - bg3b) <= 1);
+        (br === bg0r && bgg === bg0g && bb === bg0b) ||
+        (br === bg1r && bgg === bg1g && bb === bg1b) ||
+        (br === bg2r && bgg === bg2g && bb === bg2b) ||
+        (br === bg3r && bgg === bg3g && bb === bg3b);
 
       if (matchBg) {
         const rise = Math.sin((bgPhase - Math.floor(bgPhase)) * pi);
@@ -657,10 +660,10 @@ const applyBgOnlyU16 = (
 
         if (
           char[cell] === top &&
-          ((Math.abs(r - bg0r) <= 1 && Math.abs(g - bg0g) <= 1 && Math.abs(b - bg0b) <= 1) ||
-            (Math.abs(r - bg1r) <= 1 && Math.abs(g - bg1g) <= 1 && Math.abs(b - bg1b) <= 1) ||
-            (Math.abs(r - bg2r) <= 1 && Math.abs(g - bg2g) <= 1 && Math.abs(b - bg2b) <= 1) ||
-            (Math.abs(r - bg3r) <= 1 && Math.abs(g - bg3g) <= 1 && Math.abs(b - bg3b) <= 1))
+          ((r === bg0r && g === bg0g && b === bg0b) ||
+            (r === bg1r && g === bg1g && b === bg1b) ||
+            (r === bg2r && g === bg2g && b === bg2b) ||
+            (r === bg3r && g === bg3g && b === bg3b))
         ) {
           paintBlendU16(fg, slot, palette, paletteCount, bgPhase, amt);
         }
@@ -669,6 +672,36 @@ const applyBgOnlyU16 = (
       bgPhase += bgStep;
     }
   }
+};
+
+export const toRainbowTheme = (theme: any, mode: "dark" | "light" = "dark"): RainbowTheme => {
+  if (theme?.primary && theme?.background && theme?.text) {
+    return theme as RainbowTheme;
+  }
+  const step = mode === "dark" ? 200 : 700;
+  const primary = theme?.hue?.interactive?.[step] ??
+    theme?.text?.action?.primary?.base ??
+    theme?.text?.base ?? { r: 0.36, g: 0.55, b: 1, a: 1 };
+  const accent = theme?.hue?.accent?.[step] ?? theme?.syntax?.keyword ?? primary;
+  const secondary = theme?.categorical?.[0]?.[step] ?? theme?.syntax?.function ?? primary;
+
+  return {
+    text: theme?.text?.base ?? theme?.text ?? { r: 1, g: 1, b: 1, a: 1 },
+    textMuted: theme?.text?.muted ?? theme?.textMuted ?? { r: 0.6, g: 0.6, b: 0.6, a: 1 },
+    primary,
+    accent,
+    secondary,
+    background: theme?.background?.base ?? theme?.background ?? { r: 0.1, g: 0.1, b: 0.1, a: 1 },
+    backgroundPanel: theme?.background?.raised?.base ??
+      theme?.backgroundPanel ??
+      theme?.background?.base ?? { r: 0.15, g: 0.15, b: 0.15, a: 1 },
+    backgroundElement: theme?.background?.raised?.high ??
+      theme?.backgroundElement ??
+      theme?.background?.raised?.base ?? { r: 0.2, g: 0.2, b: 0.2, a: 1 },
+    backgroundMenu: theme?.background?.raised?.max ??
+      theme?.backgroundMenu ??
+      theme?.background?.raised?.high ?? { r: 0.25, g: 0.25, b: 0.25, a: 1 },
+  };
 };
 
 export const createRainbowPostProcess = (theme: () => RainbowTheme, value: () => RainbowConfig) => {
