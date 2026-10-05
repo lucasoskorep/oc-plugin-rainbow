@@ -1,9 +1,8 @@
 /** @jsxImportSource @opentui/solid */
+import { RGBA } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
-import type { TuiPlugin } from "@opencode-ai/plugin/tui";
-import { createMemo, createSignal } from "solid-js";
-
-type Api = Parameters<TuiPlugin>[0];
+import { For, createMemo, createSignal } from "solid-js";
+import type { RainbowColor, RainbowTheme } from "./rainbow-post-process";
 
 export type SettingsState = {
   fg: boolean;
@@ -95,25 +94,9 @@ export const settingByField = Object.fromEntries(rows.map((item) => [item.key, i
   [K in NumberField]: NumberRow;
 };
 
-export const createSettingKey = (id: string) => {
-  return {
-    fg: `${id}.setting.fg`,
-    bg: `${id}.setting.bg`,
-    speed: `${id}.setting.speed`,
-    turns: `${id}.setting.turns`,
-    glow: `${id}.setting.glow`,
-  } as const;
-};
-
-const field = (value: unknown): Field | undefined => {
-  if (
-    value === "fg" ||
-    value === "bg" ||
-    value === "speed" ||
-    value === "turns" ||
-    value === "glow"
-  )
-    return value;
+const toRgba = (color: RainbowColor): RGBA => {
+  if (color instanceof RGBA) return color;
+  return RGBA.fromValues(color.r, color.g, color.b, color.a);
 };
 
 const status = (value: boolean) => {
@@ -125,37 +108,48 @@ const metric = (value: SettingsState, key: NumberField) => {
 };
 
 export const SettingsDialog = (props: {
-  api: Api;
+  theme: () => RainbowTheme;
   value: () => SettingsState;
   flip: (key: ToggleField) => void;
   tune: (key: NumberField, dir: -1 | 1) => void;
+  onClose: () => void;
 }) => {
-  const [cur, setCur] = createSignal<Field>(rows[0]?.key ?? "fg");
-  const theme = createMemo(() => props.api.theme.current);
-  const current = createMemo(() => settingByField[cur()] ?? settingByField.fg);
-  const options = createMemo(() => {
-    const value = props.value();
-    return rows.map((item) => {
-      const footer = item.kind === "toggle" ? status(value[item.key]) : metric(value, item.key);
-      return {
-        title: item.title,
-        value: item.key,
-        description: item.description,
-        category: item.category,
-        footer,
-      };
-    });
-  });
+  const [curIndex, setCurIndex] = createSignal(0);
+  const theme = createMemo(() => props.theme());
+  const current = createMemo(() => rows[curIndex()] ?? rows[0]!);
 
   useKeyboard((evt) => {
+    if (evt.name === "escape") {
+      evt.preventDefault();
+      evt.stopPropagation();
+      props.onClose();
+      return;
+    }
+
+    if (evt.name === "up" || (evt.ctrl && evt.name === "p")) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      setCurIndex((prev) => (prev > 0 ? prev - 1 : rows.length - 1));
+      return;
+    }
+
+    if (evt.name === "down" || (evt.ctrl && evt.name === "n")) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      setCurIndex((prev) => (prev < rows.length - 1 ? prev + 1 : 0));
+      return;
+    }
+
     const item = current();
     if (!item) return;
 
-    if (evt.name === "space" && item.kind === "toggle") {
-      evt.preventDefault();
-      evt.stopPropagation();
-      props.flip(item.key);
-      return;
+    if (evt.name === "space" || evt.name === "return") {
+      if (item.kind === "toggle") {
+        evt.preventDefault();
+        evt.stopPropagation();
+        props.flip(item.key);
+        return;
+      }
     }
 
     if (evt.name !== "left" && evt.name !== "right") return;
@@ -169,47 +163,64 @@ export const SettingsDialog = (props: {
   });
 
   return (
-    <box flexDirection="column">
-      <props.api.ui.DialogSelect
-        title="Rainbow settings"
-        placeholder="Filter settings"
-        options={options()}
-        current={cur()}
-        onMove={(item) => {
-          const next = field(item.value);
-          if (!next) return;
-          setCur(next);
-        }}
-        onSelect={(item) => {
-          const next = field(item.value);
-          if (!next) return;
-          setCur(next);
-          const row = settingByField[next];
-          if (row.kind === "toggle") {
-            props.flip(row.key);
-          }
-        }}
-      />
-      <box
-        paddingRight={2}
-        paddingLeft={4}
-        flexDirection="row"
-        gap={2}
-        paddingTop={1}
-        paddingBottom={1}
-        flexShrink={0}
-      >
+    <box flexDirection="column" paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
+      <box flexDirection="row" justifyContent="space-between" marginBottom={1}>
+        <text fg={toRgba(theme().text)}>
+          <b>Rainbow settings</b>
+        </text>
+        <text fg={toRgba(theme().textMuted)}>esc to close</text>
+      </box>
+      <box flexDirection="column">
+        <For each={rows}>
+          {(item, index) => {
+            const isSelected = () => index() === curIndex();
+            const footer = () =>
+              item.kind === "toggle"
+                ? status(props.value()[item.key])
+                : metric(props.value(), item.key);
+            return (
+              <box
+                flexDirection="row"
+                justifyContent="space-between"
+                paddingLeft={1}
+                paddingRight={1}
+                backgroundColor={isSelected() ? toRgba(theme().backgroundPanel) : undefined}
+              >
+                <box flexDirection="row" gap={1}>
+                  <text fg={toRgba(isSelected() ? theme().primary : theme().textMuted)}>
+                    {isSelected() ? ">" : " "}
+                  </text>
+                  <text fg={toRgba(isSelected() ? theme().text : theme().textMuted)}>
+                    <b>{item.title}</b>
+                  </text>
+                  <text fg={toRgba(theme().textMuted)}>- {item.description}</text>
+                </box>
+                <text fg={toRgba(isSelected() ? theme().primary : theme().text)}>
+                  <b>{footer()}</b>
+                </text>
+              </box>
+            );
+          }}
+        </For>
+      </box>
+      <box flexDirection="row" gap={3} marginTop={1} paddingTop={1} flexShrink={0}>
         <text>
-          <span style={{ fg: theme().text }}>
-            <b>toggle</b>{" "}
+          <span style={{ fg: toRgba(theme().text) }}>
+            <b>navigate</b>{" "}
           </span>
-          <span style={{ fg: theme().textMuted }}>space enter left/right</span>
+          <span style={{ fg: toRgba(theme().textMuted) }}>up/down</span>
         </text>
         <text>
-          <span style={{ fg: theme().text }}>
+          <span style={{ fg: toRgba(theme().text) }}>
+            <b>toggle</b>{" "}
+          </span>
+          <span style={{ fg: toRgba(theme().textMuted) }}>space enter left/right</span>
+        </text>
+        <text>
+          <span style={{ fg: toRgba(theme().text) }}>
             <b>adjust</b>{" "}
           </span>
-          <span style={{ fg: theme().textMuted }}>left/right</span>
+          <span style={{ fg: toRgba(theme().textMuted) }}>left/right</span>
         </text>
       </box>
     </box>

@@ -1,12 +1,11 @@
 /** @jsxImportSource @opentui/solid */
 import { TargetChannel, type OptimizedBuffer } from "@opentui/core";
-import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui";
+import { Plugin } from "@opencode/plugin/tui";
 import { createSignal } from "solid-js";
 import { LogoScreen } from "./logo-screen";
-import { createRainbowPostProcess } from "./rainbow-post-process";
+import { createRainbowPostProcess, type RainbowTheme } from "./rainbow-post-process";
 import {
   SettingsDialog,
-  createSettingKey,
   type Field,
   type NumberField,
   type SettingsState,
@@ -17,7 +16,7 @@ const id = "tui-rainbow";
 const speed = 0.008;
 const turns = 3;
 const glow = 0.05;
-const splashRoute = `${id}.logo`;
+const splashRoute = "logo";
 const splashCommand = `${id}.logo-splash`;
 const splashFadeInMs = 1050;
 const splashPeakHoldMs = 34;
@@ -34,10 +33,7 @@ type SplashState = {
   queued: boolean;
 };
 
-type Api = Parameters<TuiPlugin>[0];
 type Cfg = SettingsState;
-
-const setting = createSettingKey(id);
 
 const clamp = (value: number, min: number, max: number) => {
   if (value < min) return min;
@@ -122,214 +118,266 @@ const cfg = (opts: Record<string, unknown> | undefined): Cfg => {
   };
 };
 
-const load = (api: Api, value: Cfg): Cfg => {
+export const toRainbowTheme = (theme: any, mode: "dark" | "light" = "dark"): RainbowTheme => {
+  if (theme?.primary && theme?.background && theme?.text) {
+    return theme as RainbowTheme;
+  }
+  const step = mode === "dark" ? 200 : 700;
+  const primary =
+    theme?.hue?.interactive?.[step] ?? theme?.text?.action?.primary?.base ?? theme?.text?.base;
+  const accent = theme?.hue?.accent?.[step] ?? theme?.syntax?.keyword ?? primary;
+  const secondary = theme?.categorical?.[0]?.[step] ?? theme?.syntax?.function ?? primary;
+
   return {
-    fg: bool(api.kv.get(setting.fg, value.fg), value.fg),
-    bg: bool(api.kv.get(setting.bg, value.bg), value.bg),
-    speed: clamp(num(api.kv.get(setting.speed, value.speed), value.speed), 0, 0.03),
-    turns: clamp(num(api.kv.get(setting.turns, value.turns), value.turns), 0.25, 8),
-    glow: clamp(num(api.kv.get(setting.glow, value.glow), value.glow), 0, 0.15),
+    text: theme?.text?.base ?? theme?.text,
+    textMuted: theme?.text?.muted ?? theme?.textMuted,
+    primary,
+    accent,
+    secondary,
+    background: theme?.background?.base ?? theme?.background,
+    backgroundPanel:
+      theme?.background?.raised?.base ?? theme?.backgroundPanel ?? theme?.background?.base,
+    backgroundElement:
+      theme?.background?.raised?.high ??
+      theme?.backgroundElement ??
+      theme?.background?.raised?.base,
+    backgroundMenu:
+      theme?.background?.raised?.max ?? theme?.backgroundMenu ?? theme?.background?.raised?.high,
   };
 };
 
-const tui: TuiPlugin = async (api, options) => {
-  if (options?.enabled === false) return;
+export default Plugin.define({
+  id,
+  setup(context) {
+    if (context.options?.enabled === false) return;
 
-  const [value, setValue] = createSignal(load(api, cfg(options)));
-  const keybind = api.keybind.create({ logo_splash: splashKeybind }, obj(options?.keybinds));
-  const apply: (buffer: OptimizedBuffer, delta: number) => void = createRainbowPostProcess(
-    () => api.theme.current,
-    value,
-  );
-  const splash: SplashState = {
-    phase: "idle",
-    elapsed: 0,
-    queued: false,
-  };
-  let live = false;
-  let disposed = false;
-  let rainbowTimer: ReturnType<typeof setTimeout> | undefined;
+    let updateStored: ((mutation: (draft: Cfg) => void) => Promise<void>) | undefined;
+    let initial = cfg(context.options);
+    if (context.storage?.store) {
+      try {
+        const [stored, update] = context.storage.store<Cfg>("settings", {
+          initial,
+        });
+        updateStored = update;
+        initial = {
+          fg: bool(stored.fg, initial.fg),
+          bg: bool(stored.bg, initial.bg),
+          speed: clamp(num(stored.speed, initial.speed), 0, 0.03),
+          turns: clamp(num(stored.turns, initial.turns), 0.25, 8),
+          glow: clamp(num(stored.glow, initial.glow), 0, 0.15),
+        };
+      } catch {}
+    }
 
-  const splashLive = () => splash.phase !== "idle";
+    const [value, setValue] = createSignal<Cfg>(initial);
+    const keybindConfig = obj(context.options?.keybinds);
+    const logoSplashBind =
+      typeof keybindConfig?.logo_splash === "string" ? keybindConfig.logo_splash : splashKeybind;
 
-  const clearRainbowTimer = () => {
-    if (rainbowTimer === undefined) return;
-    clearTimeout(rainbowTimer);
-    rainbowTimer = undefined;
-  };
+    const themeAccessor = () => toRainbowTheme(context.theme, context.themeMode);
+    const apply: (buffer: OptimizedBuffer, delta: number) => void = createRainbowPostProcess(
+      themeAccessor,
+      value,
+    );
+    const splash: SplashState = {
+      phase: "idle",
+      elapsed: 0,
+      queued: false,
+    };
+    let live = false;
+    let disposed = false;
+    let rainbowTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Keep the ambient effect on one-shot renders instead of a continuous live loop.
-  const scheduleRainbow = (cfg = value()) => {
-    if (disposed || splashLive() || !anim(cfg) || rainbowTimer !== undefined) return;
-    rainbowTimer = setTimeout(() => {
+    const splashLive = () => splash.phase !== "idle";
+
+    const clearRainbowTimer = () => {
+      if (rainbowTimer === undefined) return;
+      clearTimeout(rainbowTimer);
       rainbowTimer = undefined;
-      if (disposed || splashLive()) return;
-      const next = value();
-      if (!anim(next)) return;
-      api.renderer.requestRender();
-      scheduleRainbow(next);
-    }, rainbowFrameMs(cfg));
-  };
+    };
 
-  const sync = (cfg = value()) => {
-    const nextLive = splashLive();
-    if (nextLive && !live) {
-      api.renderer.requestLive();
-      live = true;
-    }
-    if (!nextLive && live) {
-      api.renderer.dropLive();
-      live = false;
-    }
+    const scheduleRainbow = (cfg = value()) => {
+      if (disposed || splashLive() || !anim(cfg) || rainbowTimer !== undefined) return;
+      rainbowTimer = setTimeout(() => {
+        rainbowTimer = undefined;
+        if (disposed || splashLive()) return;
+        const next = value();
+        if (!anim(next)) return;
+        context.renderer.requestRender();
+        scheduleRainbow(next);
+      }, rainbowFrameMs(cfg));
+    };
 
-    clearRainbowTimer();
-    if (!nextLive && anim(cfg)) {
-      scheduleRainbow(cfg);
-    }
-  };
+    const sync = (cfg = value()) => {
+      const nextLive = splashLive();
+      if (nextLive && !live) {
+        context.renderer.requestLive();
+        live = true;
+      }
+      if (!nextLive && live) {
+        context.renderer.dropLive();
+        live = false;
+      }
 
-  const startSplash = () => {
-    if (splash.phase !== "idle") return;
-    const current = api.route.current;
-    if (current.name === splashRoute) return;
-    api.ui.dialog.clear();
-    splash.phase = "fade-in";
-    splash.elapsed = 0;
-    splash.queued = false;
-    sync();
-    api.renderer.requestRender();
-  };
+      clearRainbowTimer();
+      if (!nextLive && anim(cfg)) {
+        scheduleRainbow(cfg);
+      }
+    };
 
-  const leaveSplash = () => {
-    splash.phase = "idle";
-    splash.elapsed = 0;
-    splash.queued = false;
-    api.route.navigate("home");
-    sync();
-    api.renderer.requestRender();
-  };
+    const startSplash = () => {
+      if (splash.phase !== "idle") return;
+      const current = context.ui.router.current();
+      if (current.type === "plugin" && current.name === splashRoute) return;
+      context.ui.dialog.clear();
+      splash.phase = "fade-in";
+      splash.elapsed = 0;
+      splash.queued = false;
+      sync();
+      context.renderer.requestRender();
+    };
 
-  const fadeToLogo = (buffer: OptimizedBuffer, delta: number) => {
-    if (splash.phase === "idle") return;
-    splash.elapsed += delta;
+    const leaveSplash = () => {
+      splash.phase = "idle";
+      splash.elapsed = 0;
+      splash.queued = false;
+      context.ui.router.navigate({ type: "home" });
+      sync();
+      context.renderer.requestRender();
+    };
 
-    let strength = 0;
-    if (splash.phase === "fade-in") {
-      const t = clamp(splash.elapsed / splashFadeInMs, 0, 1);
-      strength = splashFadeIn(t);
-      if (t >= 1 && !splash.queued) {
-        splash.phase = "hold";
-        splash.elapsed = 0;
-        splash.queued = true;
-        queueMicrotask(() => {
-          if (disposed) return;
-          api.route.navigate(splashRoute);
+    const fadeToLogo = (buffer: OptimizedBuffer, delta: number) => {
+      if (splash.phase === "idle") return;
+      splash.elapsed += delta;
+
+      let strength = 0;
+      if (splash.phase === "fade-in") {
+        const t = clamp(splash.elapsed / splashFadeInMs, 0, 1);
+        strength = splashFadeIn(t);
+        if (t >= 1 && !splash.queued) {
+          splash.phase = "hold";
+          splash.elapsed = 0;
+          splash.queued = true;
+          queueMicrotask(() => {
+            if (disposed) return;
+            context.ui.router.navigate({ type: "plugin", name: splashRoute });
+            splash.queued = false;
+            sync();
+            context.renderer.requestRender();
+          });
+        }
+      } else if (splash.phase === "hold") {
+        strength = 1;
+        if (splash.elapsed >= splashPeakHoldMs) {
+          splash.phase = "fade-out";
+          splash.elapsed = 0;
+        }
+      } else {
+        const t = clamp(splash.elapsed / splashFadeOutMs, 0, 1);
+        strength = splashFadeOut(t);
+        if (t >= 1) {
+          splash.phase = "idle";
+          splash.elapsed = 0;
           splash.queued = false;
           sync();
-          api.renderer.requestRender();
-        });
+          return;
+        }
       }
-    } else if (splash.phase === "hold") {
-      strength = 1;
-      if (splash.elapsed >= splashPeakHoldMs) {
-        splash.phase = "fade-out";
-        splash.elapsed = 0;
-      }
-    } else {
-      const t = clamp(splash.elapsed / splashFadeOutMs, 0, 1);
-      strength = splashFadeOut(t);
-      if (t >= 1) {
-        splash.phase = "idle";
-        splash.elapsed = 0;
-        splash.queued = false;
-        sync();
-        return;
-      }
-    }
 
-    if (strength <= 0) return;
-    setWhiteMatrix(strength);
-    buffer.colorMatrixUniform(whiteMatrix, 1, TargetChannel.Both);
-  };
+      if (strength <= 0) return;
+      setWhiteMatrix(strength);
+      buffer.colorMatrixUniform(whiteMatrix, 1, TargetChannel.Both);
+    };
 
-  api.route.register([
-    {
+    const unregisterRoute = context.ui.router.register({
       name: splashRoute,
       render() {
-        return <LogoScreen theme={() => api.theme.current} onExit={leaveSplash} />;
+        return <LogoScreen theme={themeAccessor} onExit={leaveSplash} />;
       },
-    },
-  ]);
+    });
 
-  const save = <K extends Field>(key: K, next: Cfg[K]) => {
-    const prev = value();
-    if (prev[key] === next) return;
-    const state = { ...prev, [key]: next } as Cfg;
-    setValue(state);
-    api.kv.set(setting[key], next);
-    sync(state);
-  };
+    const save = <K extends Field>(key: K, next: Cfg[K]) => {
+      const prev = value();
+      if (prev[key] === next) return;
+      const state = { ...prev, [key]: next } as Cfg;
+      setValue(state);
+      updateStored?.((draft) => {
+        draft[key] = next;
+      });
+      sync(state);
+    };
 
-  const flip = (key: ToggleField) => {
-    save(key, !value()[key]);
-  };
+    const flip = (key: ToggleField) => {
+      save(key, !value()[key]);
+    };
 
-  const tune = (key: NumberField, dir: -1 | 1) => {
-    const step = key === "speed" ? 0.001 : key === "turns" ? 0.25 : 0.01;
-    const min = key === "speed" ? 0 : key === "turns" ? 0.25 : 0;
-    const max = key === "speed" ? 0.03 : key === "turns" ? 8 : 0.15;
-    const digits = key === "speed" ? 3 : 2;
-    save(key, Number(clamp(value()[key] + step * dir, min, max).toFixed(digits)));
-  };
+    const tune = (key: NumberField, dir: -1 | 1) => {
+      const step = key === "speed" ? 0.001 : key === "turns" ? 0.25 : 0.01;
+      const min = key === "speed" ? 0 : key === "turns" ? 0.25 : 0;
+      const max = key === "speed" ? 0.03 : key === "turns" ? 8 : 0.15;
+      const digits = key === "speed" ? 3 : 2;
+      save(key, Number(clamp(value()[key] + step * dir, min, max).toFixed(digits)));
+    };
 
-  const show = () => {
-    api.ui.dialog.setSize("medium");
-    api.ui.dialog.replace(() => <SettingsDialog api={api} value={value} flip={flip} tune={tune} />);
-  };
+    const show = () => {
+      context.ui.dialog.set({ size: "medium" });
+      context.ui.dialog.show(() => (
+        <SettingsDialog
+          theme={themeAccessor}
+          value={value}
+          flip={flip}
+          tune={tune}
+          onClose={() => context.ui.dialog.clear()}
+        />
+      ));
+    };
 
-  api.renderer.addPostProcessFn(apply);
-  api.renderer.addPostProcessFn(fadeToLogo);
-  sync();
+    context.renderer.addPostProcessFn(apply);
+    context.renderer.addPostProcessFn(fadeToLogo);
+    sync();
 
-  api.command.register(() => [
-    {
-      title: "Show logo splash",
-      value: splashCommand,
-      keybind: keybind.get("logo_splash"),
-      category: "Plugin",
-      description: "Fade to white and reveal a centered OpenCode logo screen",
-      onSelect() {
-        startSplash();
-      },
-    },
-    {
-      title: "Rainbow settings",
-      value: `${id}.settings`,
-      category: "Plugin",
-      slash: {
-        name: "rainbow-settings",
-      },
-      onSelect() {
-        show();
-      },
-    },
-  ]);
+    context.keymap.layer(() => ({
+      mode: "global",
+      priority: 10,
+      commands: [
+        {
+          id: splashCommand,
+          title: "Show logo splash",
+          description: "Fade to white and reveal a centered OpenCode logo screen",
+          group: "Rainbow",
+          bind: logoSplashBind,
+          palette: true,
+          run: () => {
+            startSplash();
+          },
+        },
+        {
+          id: `${id}.settings`,
+          title: "Rainbow settings",
+          group: "Rainbow",
+          palette: true,
+          slash: {
+            name: "rainbow-settings",
+          },
+          run: () => {
+            show();
+          },
+        },
+      ],
+      bindings: [splashCommand],
+    }));
 
-  api.lifecycle.onDispose(() => {
-    disposed = true;
-    clearRainbowTimer();
-    api.renderer.removePostProcessFn(apply);
-    api.renderer.removePostProcessFn(fadeToLogo);
-    if (live) {
-      api.renderer.dropLive();
-      live = false;
-    }
-  });
-};
-
-const plugin: TuiPluginModule & { id: string } = {
-  id,
-  tui,
-};
-
-export default plugin;
+    return () => {
+      disposed = true;
+      clearRainbowTimer();
+      unregisterRoute();
+      context.renderer.removePostProcessFn(apply);
+      context.renderer.removePostProcessFn(fadeToLogo);
+      if (live) {
+        context.renderer.dropLive();
+        live = false;
+      }
+      context.ui.dialog.clear();
+    };
+  },
+});

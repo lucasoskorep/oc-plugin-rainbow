@@ -24,13 +24,13 @@ Or from OpenCode commands:
 2. Select `Install Plugin`
 3. Enter `oc-plugin-rainbow`
 
-Requires OpenCode `>=1.3.14`.
+Requires OpenCode `>=2.0.0`.
 
 ## Options
 
-Plugin options can be configured via the `tui.json` config file.
+Plugin options can be configured in your `opencode.json` (or `cli.json`) config file.
 
-### TUI
+### Settings
 
 - `enabled` (`boolean`, default `true`)
 - `fg` (`boolean`, default `true`): animate neutral text colors
@@ -44,11 +44,11 @@ Example:
 
 ```json
 {
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": [
-    [
-      "oc-plugin-rainbow",
-      {
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "oc-plugin-rainbow",
+      "options": {
         "enabled": true,
         "fg": true,
         "bg": true,
@@ -56,7 +56,7 @@ Example:
         "turns": 3,
         "glow": 0.05
       }
-    ]
+    }
   ]
 }
 ```
@@ -65,13 +65,18 @@ Open `Rainbow settings` from the command palette or run `/rainbow-settings` to t
 
 ## Local use
 
-Point a TUI config at the package directory:
+Point an OpenCode config at the package directory:
 
 ```json
 {
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": [["../../oc-plugin-rainbow", { "enabled": true }]]
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "../../oc-plugin-rainbow",
+      "options": { "enabled": true }
+    }
+  ]
 }
 ```
 
-The package exports its TUI entry at `./tui` and provides default config via `package.json`.
+The package exports its TUI entry at `./tui`.

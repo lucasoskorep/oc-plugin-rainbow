@@ -1,8 +1,8 @@
 /** @jsxImportSource @opentui/solid */
 import { RGBA, TextAttributes } from "@opentui/core";
-import type { TuiThemeCurrent } from "@opencode-ai/plugin/tui";
 import { For, createMemo, type JSX } from "solid-js";
 import { useKeyboard } from "@opentui/solid";
+import type { RainbowColor, RainbowTheme } from "./rainbow-post-process";
 
 const logo = {
   left: [
@@ -20,6 +20,11 @@ const logo = {
 };
 const marks = "_^~";
 const shadowMarker = new RegExp(`[${marks}]`);
+
+const toRgba = (color: RainbowColor): RGBA => {
+  if (color instanceof RGBA) return color;
+  return RGBA.fromValues(color.r, color.g, color.b, color.a);
+};
 
 const tint = (a: RGBA, b: RGBA, amt: number) => {
   return RGBA.fromValues(
@@ -87,7 +92,7 @@ const renderLine = (line: string, fg: RGBA, background: RGBA, bold: boolean): JS
   return elements;
 };
 
-export function LogoScreen(props: { theme: () => TuiThemeCurrent; onExit: () => void }) {
+export function LogoScreen(props: { theme: () => RainbowTheme; onExit: () => void }) {
   const theme = createMemo(() => props.theme());
 
   useKeyboard((evt) => {
@@ -102,16 +107,19 @@ export function LogoScreen(props: { theme: () => TuiThemeCurrent; onExit: () => 
       <box flexGrow={1} minHeight={0} />
       <box flexShrink={0}>
         <For each={logo.left}>
-          {(line, index) => (
-            <box flexDirection="row" gap={1}>
-              <box flexDirection="row">
-                {renderLine(line, theme().textMuted, theme().background, false)}
+          {(line, index) => {
+            const bg = () => toRgba(theme().background);
+            const muted = () => toRgba(theme().textMuted);
+            const text = () => toRgba(theme().text);
+            return (
+              <box flexDirection="row" gap={1}>
+                <box flexDirection="row">{renderLine(line, muted(), bg(), false)}</box>
+                <box flexDirection="row">
+                  {renderLine(logo.right[index()] ?? "", text(), bg(), true)}
+                </box>
               </box>
-              <box flexDirection="row">
-                {renderLine(logo.right[index()] ?? "", theme().text, theme().background, true)}
-              </box>
-            </box>
-          )}
+            );
+          }}
         </For>
       </box>
       <box height={3} minHeight={0} flexShrink={0} />

@@ -5,6 +5,7 @@ const dx = Math.cos(tilt);
 const dy = Math.sin(tilt);
 const pi = Math.PI;
 const miss = 2;
+const missU16 = 512;
 
 export type RainbowColor = {
   r: number;
@@ -38,8 +39,8 @@ export type RainbowBuffer = {
   height: number;
   buffers: {
     char: ArrayLike<number>;
-    fg: Float32Array;
-    bg: Float32Array;
+    fg: Float32Array | Uint16Array;
+    bg: Float32Array | Uint16Array;
   };
 };
 
@@ -49,6 +50,8 @@ type ThemeCache = {
   palette: number[];
   paletteCount: number;
   bgMarks: number[];
+  paletteU16: number[];
+  bgMarksU16: number[];
 };
 
 const colorInt = (value: number) => Math.round(value * 255);
@@ -182,10 +185,12 @@ const syncThemeCache = (cache: ThemeCache, theme: RainbowTheme) => {
   cache.palette = palette;
   cache.paletteCount = palette.length / 3;
   cache.bgMarks = bgMarks;
+  cache.paletteU16 = palette.map((v) => Math.round(v * 255));
+  cache.bgMarksU16 = bgMarks.map((v) => Math.round(v * 255));
 };
 
 const paintFull = (
-  buf: Float32Array,
+  buf: Float32Array | Uint16Array,
   slot: number,
   palette: number[],
   paletteCount: number,
@@ -212,7 +217,7 @@ const paintFull = (
 };
 
 const paintBlend = (
-  buf: Float32Array,
+  buf: Float32Array | Uint16Array,
   slot: number,
   palette: number[],
   paletteCount: number,
@@ -240,6 +245,64 @@ const paintBlend = (
   buf[slot] = prevR + (r - prevR) * amt;
   buf[slot + 1] = prevG + (g - prevG) * amt;
   buf[slot + 2] = prevB + (b - prevB) * amt;
+};
+
+const paintFullU16 = (
+  buf: Uint16Array | Float32Array,
+  slot: number,
+  palette: number[],
+  paletteCount: number,
+  phase: number,
+) => {
+  const pos = (phase - Math.floor(phase)) * paletteCount;
+  const idx = Math.floor(pos);
+  const gap = pos - idx;
+  const base = idx * 3;
+  const next = idx + 1 === paletteCount ? 0 : base + 3;
+  const baseR = palette[base]!;
+  const baseG = palette[base + 1]!;
+  const baseB = palette[base + 2]!;
+  const nextR = palette[next]!;
+  const nextG = palette[next + 1]!;
+  const nextB = palette[next + 2]!;
+  const r = baseR + (nextR - baseR) * gap;
+  const g = baseG + (nextG - baseG) * gap;
+  const b = baseB + (nextB - baseB) * gap;
+
+  buf[slot] = Math.round(r);
+  buf[slot + 1] = Math.round(g);
+  buf[slot + 2] = Math.round(b);
+};
+
+const paintBlendU16 = (
+  buf: Uint16Array | Float32Array,
+  slot: number,
+  palette: number[],
+  paletteCount: number,
+  phase: number,
+  amt: number,
+) => {
+  const pos = (phase - Math.floor(phase)) * paletteCount;
+  const idx = Math.floor(pos);
+  const gap = pos - idx;
+  const base = idx * 3;
+  const next = idx + 1 === paletteCount ? 0 : base + 3;
+  const baseR = palette[base]!;
+  const baseG = palette[base + 1]!;
+  const baseB = palette[base + 2]!;
+  const nextR = palette[next]!;
+  const nextG = palette[next + 1]!;
+  const nextB = palette[next + 2]!;
+  const r = baseR + (nextR - baseR) * gap;
+  const g = baseG + (nextG - baseG) * gap;
+  const b = baseB + (nextB - baseB) * gap;
+  const prevR = buf[slot]!;
+  const prevG = buf[slot + 1]!;
+  const prevB = buf[slot + 2]!;
+
+  buf[slot] = Math.round(prevR + (r - prevR) * amt);
+  buf[slot + 1] = Math.round(prevG + (g - prevG) * amt);
+  buf[slot + 2] = Math.round(prevB + (b - prevB) * amt);
 };
 
 const applyBoth = (
@@ -325,6 +388,89 @@ const applyBoth = (
   }
 };
 
+const applyBothU16 = (
+  buffer: RainbowBuffer,
+  palette: number[],
+  paletteCount: number,
+  fgStep: number,
+  fgRow: number,
+  fgShift: number,
+  bgStep: number,
+  bgRow: number,
+  bgShift: number,
+  glow: number,
+  textR: number,
+  textG: number,
+  textB: number,
+  mutedR: number,
+  mutedG: number,
+  mutedB: number,
+  bg0r: number,
+  bg0g: number,
+  bg0b: number,
+  bg1r: number,
+  bg1g: number,
+  bg1b: number,
+  bg2r: number,
+  bg2g: number,
+  bg2b: number,
+  bg3r: number,
+  bg3g: number,
+  bg3b: number,
+) => {
+  const width = buffer.width;
+  const height = buffer.height;
+  const fg = buffer.buffers.fg;
+  const bg = buffer.buffers.bg;
+  const char = buffer.buffers.char;
+
+  for (let y = 0, cell = 0, slot = 0; y < height; y++) {
+    let fgPhase = y * fgRow + fgShift;
+    let bgPhase = y * bgRow + bgShift;
+
+    for (let x = 0; x < width; x++, cell++, slot += 4) {
+      const r = fg[slot]!;
+      const g = fg[slot + 1]!;
+      const b = fg[slot + 2]!;
+
+      if (
+        (Math.abs(r - textR) <= 1 && Math.abs(g - textG) <= 1 && Math.abs(b - textB) <= 1) ||
+        (Math.abs(r - mutedR) <= 1 && Math.abs(g - mutedG) <= 1 && Math.abs(b - mutedB) <= 1)
+      ) {
+        paintFullU16(fg, slot, palette, paletteCount, fgPhase);
+      }
+
+      const br = bg[slot]!;
+      const bgg = bg[slot + 1]!;
+      const bb = bg[slot + 2]!;
+      const matchBg =
+        (Math.abs(br - bg0r) <= 1 && Math.abs(bgg - bg0g) <= 1 && Math.abs(bb - bg0b) <= 1) ||
+        (Math.abs(br - bg1r) <= 1 && Math.abs(bgg - bg1g) <= 1 && Math.abs(bb - bg1b) <= 1) ||
+        (Math.abs(br - bg2r) <= 1 && Math.abs(bgg - bg2g) <= 1 && Math.abs(bb - bg2b) <= 1) ||
+        (Math.abs(br - bg3r) <= 1 && Math.abs(bgg - bg3g) <= 1 && Math.abs(bb - bg3b) <= 1);
+
+      if (matchBg) {
+        const rise = Math.sin((bgPhase - Math.floor(bgPhase)) * pi);
+        const amt = glow * (0.35 + 0.65 * rise * rise);
+        paintBlendU16(bg, slot, palette, paletteCount, bgPhase, amt);
+
+        if (
+          char[cell] === top &&
+          ((Math.abs(r - bg0r) <= 1 && Math.abs(g - bg0g) <= 1 && Math.abs(b - bg0b) <= 1) ||
+            (Math.abs(r - bg1r) <= 1 && Math.abs(g - bg1g) <= 1 && Math.abs(b - bg1b) <= 1) ||
+            (Math.abs(r - bg2r) <= 1 && Math.abs(g - bg2g) <= 1 && Math.abs(b - bg2b) <= 1) ||
+            (Math.abs(r - bg3r) <= 1 && Math.abs(g - bg3g) <= 1 && Math.abs(b - bg3b) <= 1))
+        ) {
+          paintBlendU16(fg, slot, palette, paletteCount, bgPhase, amt);
+        }
+      }
+
+      fgPhase += fgStep;
+      bgPhase += bgStep;
+    }
+  }
+};
+
 const applyFgOnly = (
   buffer: RainbowBuffer,
   palette: number[],
@@ -355,6 +501,42 @@ const applyFgOnly = (
         (Math.abs(r - mutedR) <= eps && Math.abs(g - mutedG) <= eps && Math.abs(b - mutedB) <= eps)
       ) {
         paintFull(fg, slot, palette, paletteCount, fgPhase);
+      }
+      fgPhase += fgStep;
+    }
+  }
+};
+
+const applyFgOnlyU16 = (
+  buffer: RainbowBuffer,
+  palette: number[],
+  paletteCount: number,
+  fgStep: number,
+  fgRow: number,
+  fgShift: number,
+  textR: number,
+  textG: number,
+  textB: number,
+  mutedR: number,
+  mutedG: number,
+  mutedB: number,
+) => {
+  const width = buffer.width;
+  const height = buffer.height;
+  const fg = buffer.buffers.fg;
+
+  for (let y = 0, slot = 0; y < height; y++) {
+    let fgPhase = y * fgRow + fgShift;
+
+    for (let x = 0; x < width; x++, slot += 4) {
+      const r = fg[slot]!;
+      const g = fg[slot + 1]!;
+      const b = fg[slot + 2]!;
+      if (
+        (Math.abs(r - textR) <= 1 && Math.abs(g - textG) <= 1 && Math.abs(b - textB) <= 1) ||
+        (Math.abs(r - mutedR) <= 1 && Math.abs(g - mutedG) <= 1 && Math.abs(b - mutedB) <= 1)
+      ) {
+        paintFullU16(fg, slot, palette, paletteCount, fgPhase);
       }
       fgPhase += fgStep;
     }
@@ -425,6 +607,70 @@ const applyBgOnly = (
   }
 };
 
+const applyBgOnlyU16 = (
+  buffer: RainbowBuffer,
+  palette: number[],
+  paletteCount: number,
+  bgStep: number,
+  bgRow: number,
+  bgShift: number,
+  glow: number,
+  bg0r: number,
+  bg0g: number,
+  bg0b: number,
+  bg1r: number,
+  bg1g: number,
+  bg1b: number,
+  bg2r: number,
+  bg2g: number,
+  bg2b: number,
+  bg3r: number,
+  bg3g: number,
+  bg3b: number,
+) => {
+  const width = buffer.width;
+  const height = buffer.height;
+  const fg = buffer.buffers.fg;
+  const bg = buffer.buffers.bg;
+  const char = buffer.buffers.char;
+
+  for (let y = 0, cell = 0, slot = 0; y < height; y++) {
+    let bgPhase = y * bgRow + bgShift;
+
+    for (let x = 0; x < width; x++, cell++, slot += 4) {
+      const r = fg[slot]!;
+      const g = fg[slot + 1]!;
+      const b = fg[slot + 2]!;
+      const br = bg[slot]!;
+      const bgg = bg[slot + 1]!;
+      const bb = bg[slot + 2]!;
+      const matchBg =
+        (Math.abs(br - bg0r) <= 1 && Math.abs(bgg - bg0g) <= 1 && Math.abs(bb - bg0b) <= 1) ||
+        (Math.abs(br - bg1r) <= 1 && Math.abs(bgg - bg1g) <= 1 && Math.abs(bb - bg1b) <= 1) ||
+        (Math.abs(br - bg2r) <= 1 && Math.abs(bgg - bg2g) <= 1 && Math.abs(bb - bg2b) <= 1) ||
+        (Math.abs(br - bg3r) <= 1 && Math.abs(bgg - bg3g) <= 1 && Math.abs(bb - bg3b) <= 1);
+
+      if (matchBg) {
+        const rise = Math.sin((bgPhase - Math.floor(bgPhase)) * pi);
+        const amt = glow * (0.35 + 0.65 * rise * rise);
+        paintBlendU16(bg, slot, palette, paletteCount, bgPhase, amt);
+
+        if (
+          char[cell] === top &&
+          ((Math.abs(r - bg0r) <= 1 && Math.abs(g - bg0g) <= 1 && Math.abs(b - bg0b) <= 1) ||
+            (Math.abs(r - bg1r) <= 1 && Math.abs(g - bg1g) <= 1 && Math.abs(b - bg1b) <= 1) ||
+            (Math.abs(r - bg2r) <= 1 && Math.abs(g - bg2g) <= 1 && Math.abs(b - bg2b) <= 1) ||
+            (Math.abs(r - bg3r) <= 1 && Math.abs(g - bg3g) <= 1 && Math.abs(b - bg3b) <= 1))
+        ) {
+          paintBlendU16(fg, slot, palette, paletteCount, bgPhase, amt);
+        }
+      }
+
+      bgPhase += bgStep;
+    }
+  }
+};
+
 export const createRainbowPostProcess = (theme: () => RainbowTheme, value: () => RainbowConfig) => {
   let time = 0;
   const cache: ThemeCache = {
@@ -433,6 +679,8 @@ export const createRainbowPostProcess = (theme: () => RainbowTheme, value: () =>
     palette: [0, 0, 0],
     paletteCount: 1,
     bgMarks: [],
+    paletteU16: [0, 0, 0],
+    bgMarksU16: [],
   };
 
   return (buffer: RainbowBuffer, delta: number) => {
@@ -445,6 +693,117 @@ export const createRainbowPostProcess = (theme: () => RainbowTheme, value: () =>
 
     const skin = theme();
     syncThemeCache(cache, skin);
+
+    const isUint16 = buffer.buffers.fg instanceof Uint16Array;
+    const invSpan = 1 / Math.max(1, buffer.width * dx + buffer.height * dy);
+    const fgStep = dx * invSpan * cfg.turns;
+    const fgRow = dy * invSpan * cfg.turns;
+    const fgShift = time * 0.1;
+    const blur = Math.max(0.5, cfg.turns * 0.55);
+    const bgStep = dx * invSpan * blur;
+    const bgRow = dy * invSpan * blur;
+    const bgShift = time * 0.04 + 0.17;
+
+    if (isUint16) {
+      const textR = Math.round(skin.text.r * 255);
+      const textG = Math.round(skin.text.g * 255);
+      const textB = Math.round(skin.text.b * 255);
+      const mutedR = Math.round(skin.textMuted.r * 255);
+      const mutedG = Math.round(skin.textMuted.g * 255);
+      const mutedB = Math.round(skin.textMuted.b * 255);
+
+      const bgMarks = cache.bgMarksU16;
+      const bg0r = bgMarks[0] ?? missU16;
+      const bg0g = bgMarks[1] ?? missU16;
+      const bg0b = bgMarks[2] ?? missU16;
+      const bg1r = bgMarks[3] ?? missU16;
+      const bg1g = bgMarks[4] ?? missU16;
+      const bg1b = bgMarks[5] ?? missU16;
+      const bg2r = bgMarks[6] ?? missU16;
+      const bg2g = bgMarks[7] ?? missU16;
+      const bg2b = bgMarks[8] ?? missU16;
+      const bg3r = bgMarks[9] ?? missU16;
+      const bg3g = bgMarks[10] ?? missU16;
+      const bg3b = bgMarks[11] ?? missU16;
+
+      const palette = cache.paletteU16;
+      const paletteCount = cache.paletteCount;
+
+      if (useFg && useBg) {
+        applyBothU16(
+          buffer,
+          palette,
+          paletteCount,
+          fgStep,
+          fgRow,
+          fgShift,
+          bgStep,
+          bgRow,
+          bgShift,
+          cfg.glow,
+          textR,
+          textG,
+          textB,
+          mutedR,
+          mutedG,
+          mutedB,
+          bg0r,
+          bg0g,
+          bg0b,
+          bg1r,
+          bg1g,
+          bg1b,
+          bg2r,
+          bg2g,
+          bg2b,
+          bg3r,
+          bg3g,
+          bg3b,
+        );
+        return;
+      }
+
+      if (useFg) {
+        applyFgOnlyU16(
+          buffer,
+          palette,
+          paletteCount,
+          fgStep,
+          fgRow,
+          fgShift,
+          textR,
+          textG,
+          textB,
+          mutedR,
+          mutedG,
+          mutedB,
+        );
+        return;
+      }
+
+      applyBgOnlyU16(
+        buffer,
+        palette,
+        paletteCount,
+        bgStep,
+        bgRow,
+        bgShift,
+        cfg.glow,
+        bg0r,
+        bg0g,
+        bg0b,
+        bg1r,
+        bg1g,
+        bg1b,
+        bg2r,
+        bg2g,
+        bg2b,
+        bg3r,
+        bg3g,
+        bg3b,
+      );
+      return;
+    }
 
     const textR = skin.text.r;
     const textG = skin.text.g;
@@ -467,14 +826,6 @@ export const createRainbowPostProcess = (theme: () => RainbowTheme, value: () =>
     const bg3g = bgMarks[10] ?? miss;
     const bg3b = bgMarks[11] ?? miss;
 
-    const invSpan = 1 / Math.max(1, buffer.width * dx + buffer.height * dy);
-    const fgStep = dx * invSpan * cfg.turns;
-    const fgRow = dy * invSpan * cfg.turns;
-    const fgShift = time * 0.1;
-    const blur = Math.max(0.5, cfg.turns * 0.55);
-    const bgStep = dx * invSpan * blur;
-    const bgRow = dy * invSpan * blur;
-    const bgShift = time * 0.04 + 0.17;
     const palette = cache.palette;
     const paletteCount = cache.paletteCount;
 

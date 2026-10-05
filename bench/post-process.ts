@@ -115,7 +115,7 @@ const hit = (list: RainbowColor[], r: number, g: number, b: number) => {
 };
 
 const paint = (
-  buf: Float32Array,
+  buf: Float32Array | Uint16Array,
   slot: number,
   list: RainbowColor[],
   step: number,
