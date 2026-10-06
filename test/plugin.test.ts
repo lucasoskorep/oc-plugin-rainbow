@@ -147,6 +147,47 @@ describe("oc-plugin-rainbow", () => {
     expect(floatBuf.buffers.fg[0]).not.toBe(1);
   });
 
+  it("supports Float32Array buffers with bg-only mode", () => {
+    const theme = {
+      text: { r: 1, g: 1, b: 1, a: 1 },
+      textMuted: { r: 0.5, g: 0.5, b: 0.5, a: 1 },
+      primary: { r: 0, g: 0, b: 1, a: 1 },
+      accent: { r: 1, g: 0, b: 0, a: 1 },
+      secondary: { r: 0, g: 1, b: 0, a: 1 },
+      background: { r: 0, g: 0, b: 0, a: 1 },
+      backgroundPanel: { r: 0.1, g: 0.1, b: 0.1, a: 1 },
+      backgroundElement: { r: 0.2, g: 0.2, b: 0.2, a: 1 },
+      backgroundMenu: { r: 0.3, g: 0.3, b: 0.3, a: 1 },
+    };
+
+    const process = createRainbowPostProcess(
+      () => theme,
+      () => ({
+        fg: false,
+        bg: true,
+        speed: 0.008,
+        turns: 3,
+        glow: 0.05,
+      }),
+    );
+
+    const floatBuf = {
+      width: 10,
+      height: 10,
+      buffers: {
+        char: new Uint32Array(100),
+        fg: new Float32Array(400).fill(0.3),
+        bg: new Float32Array(400).fill(0),
+      },
+    };
+    floatBuf.buffers.char[0] = "▀".charCodeAt(0);
+
+    process(floatBuf, 16);
+    // Background and upper half-block fg should be blended
+    expect(floatBuf.buffers.bg[0]).toBeGreaterThan(0);
+    expect(floatBuf.buffers.fg[0]).not.toBe(0.3);
+  });
+
   it("registers commands, routes, and cleans up on dispose", () => {
     let registeredCommands: any[] = [];
     let registeredRoutes: any[] = [];

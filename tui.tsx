@@ -151,7 +151,7 @@ const plugin: Plugin.Definition = {
       typeof keybindConfig?.logo_splash === "string" ? keybindConfig.logo_splash : splashKeybind;
 
     let lastTheme: any;
-    let lastMode: any;
+    let lastMode: "dark" | "light" | undefined;
     let cachedRainbowTheme: RainbowTheme;
     const themeAccessor = () => {
       if (context.theme !== lastTheme || context.themeMode !== lastMode) {
@@ -372,7 +372,7 @@ const plugin: Plugin.Definition = {
           ],
           bindings: [splashCommand],
         }));
-        return null as any;
+        return null;
       },
     });
 
