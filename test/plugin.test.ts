@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { OptimizedBuffer, RGBA } from "@opentui/core";
-import plugin from "../tui";
-import { createRainbowPostProcess, toRainbowTheme } from "../rainbow-post-process";
+import { readFileSync } from "fs";
+import { OptimizedBuffer, ResourceContext, RGBA } from "@opentui/core";
+import { createTestRenderer } from "@opentui/core/testing";
+import plugin from "../tui.tsx";
+import { createRainbowPostProcess, toRainbowTheme } from "../rainbow-post-process.ts";
 
 describe("oc-plugin-rainbow", () => {
   it("resolves rainbow theme from V2 theme tokens in dark and light modes", () => {
@@ -82,31 +84,41 @@ describe("oc-plugin-rainbow", () => {
       }),
     );
 
-    const buf = OptimizedBuffer.create(80, 24, "unicode");
-    buf.setCell(0, 0, "A", RGBA.fromHex("#ebeef5"), RGBA.fromHex("#12151c"));
+    const owner = new ResourceContext({ objectCapacity: 16, renderCellsMax: 80 * 24 });
+    const buf = OptimizedBuffer.create(80, 24, "unicode", { owner });
+    try {
+      buf.setCell(0, 0, "A", RGBA.fromHex("#ebeef5"), RGBA.fromHex("#12151c"));
 
-    // Cell with high-byte intent/palette slot metadata (0x0700 | 235 = 2027)
-    buf.buffers.fg[4] = 235 | (7 << 8);
-    buf.buffers.fg[5] = 238;
-    buf.buffers.fg[6] = 245;
-    buf.buffers.fg[7] = 255;
-    buf.buffers.bg[4] = 18;
-    buf.buffers.bg[5] = 21;
-    buf.buffers.bg[6] = 28;
-    buf.buffers.bg[7] = 255;
+      // Cell with high-byte intent/palette slot metadata (0x0700 | 235 = 2027)
+      buf.withBuffers((cells) => {
+        cells.fg[4] = 235 | (7 << 8);
+        cells.fg[5] = 238;
+        cells.fg[6] = 245;
+        cells.fg[7] = 255;
+        cells.bg[4] = 18;
+        cells.bg[5] = 21;
+        cells.bg[6] = 28;
+        cells.bg[7] = 255;
+      });
 
-    process(buf, 16);
+      buf._withNativePaint(() => process(buf, 16));
 
-    // Standard cell should be recolored
-    const postFg0 = Array.from(buf.buffers.fg.slice(0, 4));
-    expect(postFg0[0]).not.toBe(235);
-    expect(postFg0[3]).toBe(255);
+      buf.withBuffers((cells) => {
+        // Standard cell should be recolored
+        const postFg0 = Array.from(cells.fg.slice(0, 4));
+        expect(postFg0[0]).not.toBe(235);
+        expect(postFg0[3]).toBe(255);
 
-    // Cell with high-byte intent metadata should mask and be recolored to clean RGB
-    const postFg1 = Array.from(buf.buffers.fg.slice(4, 8));
-    expect(postFg1[0]).not.toBe(235 | (7 << 8));
-    expect(postFg1[0]).toBeLessThanOrEqual(255);
-    expect(postFg1[3]).toBe(255);
+        // Cell with high-byte intent metadata should mask and be recolored to clean RGB
+        const postFg1 = Array.from(cells.fg.slice(4, 8));
+        expect(postFg1[0]).not.toBe(235 | (7 << 8));
+        expect(postFg1[0]).toBeLessThanOrEqual(255);
+        expect(postFg1[3]).toBe(255);
+      });
+    } finally {
+      buf.destroy();
+      owner.destroy();
+    }
   });
 
   it("supports Float32Array buffers", () => {
@@ -275,5 +287,62 @@ describe("oc-plugin-rainbow", () => {
     expect(postProcessFns.length).toBe(0);
     expect(registeredRoutes.length).toBe(0);
     expect(slotDisposed).toBe(true);
+  });
+
+  it("applies rainbow post-processing through TestRenderer postProcessFns", async () => {
+    const theme = {
+      text: RGBA.fromHex("#ebeef5"),
+      textMuted: RGBA.fromHex("#8e95a9"),
+      primary: RGBA.fromHex("#5b8cff"),
+      accent: RGBA.fromHex("#ff79c6"),
+      secondary: RGBA.fromHex("#50fa7b"),
+      background: RGBA.fromHex("#12151c"),
+      backgroundPanel: RGBA.fromHex("#181c26"),
+      backgroundElement: RGBA.fromHex("#1e222e"),
+      backgroundMenu: RGBA.fromHex("#161922"),
+    };
+
+    const setup = await createTestRenderer({ width: 20, height: 4 });
+    try {
+      const process = createRainbowPostProcess(
+        () => theme,
+        () => ({
+          fg: true,
+          bg: true,
+          speed: 0.008,
+          turns: 3,
+          glow: 0.05,
+        }),
+      );
+      setup.renderer.setBackgroundColor(theme.background);
+      setup.renderer.addPostProcessFn(process);
+      setup.renderer.addPostProcessFn((buffer) => {
+        // Draw check runs after process; verify buffer remains valid for subsequent post-process fns
+        expect(buffer.width).toBe(20);
+      });
+      await setup.renderOnce();
+
+      const bgColor = setup.renderer.currentRenderBuffer.withBuffers((cells) => [
+        cells.bg[0]! & 255,
+        cells.bg[1]! & 255,
+        cells.bg[2]! & 255,
+      ]);
+      // Neutral background (18, 21, 28) should have been tinted by rainbow glow
+      expect(bgColor).not.toEqual([18, 21, 28]);
+    } finally {
+      await setup.dispose();
+    }
+  });
+
+  it("uses explicit file extensions on relative imports for OpenCode runtime module rewriting", () => {
+    const pluginFiles = ["tui.tsx", "logo-screen.tsx", "settings-dialog.tsx"];
+    const importRe = /(?:from|import)\s+["'](\.[^"']+)["']/g;
+
+    for (const file of pluginFiles) {
+      const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+      for (const match of source.matchAll(importRe)) {
+        expect(match[1]).toMatch(/\.(?:ts|tsx|js|jsx)$/);
+      }
+    }
   });
 });

@@ -2,7 +2,7 @@
 import { RGBA, TextAttributes } from "@opentui/core";
 import { For, createMemo, type JSX } from "solid-js";
 import { useKeyboard } from "@opentui/solid";
-import { toRgba, type RainbowTheme } from "./rainbow-post-process";
+import { toRgba, type RainbowTheme } from "./rainbow-post-process.ts";
 
 const logo = {
   left: [

@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { useKeyboard } from "@opentui/solid";
 import { For, createMemo, createSignal } from "solid-js";
-import { toRgba, type RainbowTheme } from "./rainbow-post-process";
+import { toRgba, type RainbowTheme } from "./rainbow-post-process.ts";
 
 export type SettingsState = {
   fg: boolean;

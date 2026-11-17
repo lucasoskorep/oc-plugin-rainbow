@@ -2,19 +2,19 @@
 import { TargetChannel, type OptimizedBuffer } from "@opentui/core";
 import type { Plugin } from "@opencode/plugin/tui";
 import { createSignal } from "solid-js";
-import { LogoScreen } from "./logo-screen";
+import { LogoScreen } from "./logo-screen.tsx";
 import {
   createRainbowPostProcess,
   toRainbowTheme,
   type RainbowTheme,
-} from "./rainbow-post-process";
+} from "./rainbow-post-process.ts";
 import {
   SettingsDialog,
   type Field,
   type NumberField,
   type SettingsState,
   type ToggleField,
-} from "./settings-dialog";
+} from "./settings-dialog.tsx";
 
 const id = "tui-rainbow";
 const speed = 0.008;
